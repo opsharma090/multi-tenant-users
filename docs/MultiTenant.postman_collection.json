@@ -50,6 +50,18 @@
     {
       "key": "org_code",
       "value": "postman-org"
+    },
+    {
+      "key": "invitation_email",
+      "value": ""
+    },
+    {
+      "key": "invitation_password",
+      "value": ""
+    },
+    {
+      "key": "invitation_token",
+      "value": ""
     }
   ],
   "item": [
@@ -565,6 +577,82 @@
           }
         }
       ]
+    },
+    {
+  "name": "Create Invitation",
+  "request": {
+    "method": "POST",
+    "header": [
+      {
+        "key": "Content-Type",
+        "value": "application/json"
+      }
+    ],
+    "body": {
+      "mode": "raw",
+      "raw": "{\n  \"email\": \"{{invitation_email}}\"\n}",
+      "options": {
+        "raw": {
+          "language": "json"
+        }
+      }
+    },
+    "url": "{{base_url}}/invitations"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Invitation created', function () {",
+          "  pm.response.to.have.status(201);",
+          "});",
+          "if (pm.response.code === 201) {",
+          "  pm.collectionVariables.set('invitation_token', pm.response.json().data.invitation_token);",
+          "}"
+        ]
+      }
     }
+  ]
+},
+{
+  "name": "Accept Invitation",
+  "request": {
+    "auth": {
+      "type": "noauth"
+    },
+    "method": "POST",
+    "header": [
+      {
+        "key": "Content-Type",
+        "value": "application/json"
+      }
+    ],
+    "body": {
+      "mode": "raw",
+      "raw": "{\n  \"invitation_token\": \"{{invitation_token}}\",\n  \"email\": \"{{invitation_email}}\",\n  \"password\": \"{{invitation_password}}\"\n}",
+      "options": {
+        "raw": {
+          "language": "json"
+        }
+      }
+    },
+    "url": "{{base_url}}/invitations/accept"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Invitation accepted', function () {",
+          "  pm.response.to.have.status(200);",
+          "});"
+        ]
+      }
+    }
+  ]
+}
   ]
 }

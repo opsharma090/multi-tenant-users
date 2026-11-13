@@ -88,15 +88,104 @@ Open docs/Design.html in a browser and Print -> Save as PDF using A4, 100% scale
 ## Design boundaries and next steps
 
 - A user is a global identity; tenant_users holds memberships and display-name overrides. PATCH /users/{id} updates the current-tenant display name only. Email/password changes are outside this endpoint.
-- POST /users creates a new global identity and membership; existing emails return 409. An invitation/acceptance flow for joining an existing user to an arbitrary tenant is a next step. Seeds and organization creation demonstrate multiple memberships.
+- POST /users creates a new global identity. Existing users can join another tenant through POST /invitations and POST /invitations/accept.
 - POST /tenants is authorized organization onboarding: tenant:create in the current tenant permits creating a new organization owned by the caller. It does not permit managing arbitrary existing tenants.
 - Suspending the current tenant blocks login, refresh and protected access. Reactivation currently requires an operator database action; no separate platform-admin recovery API exists.
 - Roles support creation, listing, permission replacement and additive user assignment. Role rename/delete and individual assignment removal endpoints are future additions.
 - Cache entries are in-process, bounded to 1,000 keys and expire after one minute. Each permission check reads the tenant's database version; triggers advance it on user-role/role-permission changes. Active membership is checked separately on every authenticated request.
-- PostgreSQL runs in Compose; the API currently runs with go run. A containerized API, automatic versioned migration runner, rate limiting, secret rotation and broader concurrency tests are next steps.
+- PostgreSQL and the API run through Docker Compose. Database migrations are currently applied manually. Rate limiting, secret rotation and broader concurrency tests remain next steps.
 - Refresh tokens are random opaque credentials, hashed with SHA-256 at rest. Access tokens are JWTs. Rotation prevents reuse of a consumed refresh credential; family-wide replay revocation is not implemented.
 - Successful authentication and domain changes are audited. Failed-login telemetry, before/after change payloads and retention/export policies are future improvements.
 
 ## Submission
 
 Include the complete Go source, go.mod, go.sum, migrations, docker-compose.yml, tests and these documentation files in the Git/Bitbucket repository. This documentation bundle alone is not the application source.
+## Docker API setup
+
+The API and PostgreSQL both run through Docker Compose.
+The API uses a multi-stage Docker build and runs as a non-root user.
+
+### First-time setup
+
+Create the local environment file:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+If `.env` already exists, preserve it. Configure `JWT_SECRET`
+with at least 32 characters.
+
+Start PostgreSQL:
+
+```powershell
+docker compose up -d postgres
+```
+
+For a fresh database, apply these migrations once, in order:
+
+1. migrations/001_init.sql
+2. migrations/002_seed.sql
+3. migrations/003_member_profile.sql
+4. migrations/004_tenant_create_permission.sql
+5. migrations/005_permission_cache.sql
+6. migrations/006_invitations.sql
+
+Use the manual migration commands documented earlier.
+For an existing database with migrations 001–005 already applied,
+run only 006_invitations.sql. Do not rerun successful migrations.
+
+Stop any locally running `go run ./cmd/api` process to free port 8080.
+
+Build and start the API:
+
+```powershell
+docker compose up --build -d api
+```
+
+Check containers and database connectivity:
+
+```powershell
+docker compose ps
+Invoke-RestMethod -Uri "http://localhost:8080/health"
+```
+
+### Rebuild after application changes
+
+```powershell
+docker compose up --build -d api
+```
+
+### View API logs
+
+```powershell
+docker compose logs --tail=50 api
+```
+
+### Run tests
+
+Keep the Docker API running:
+
+```powershell
+$env:TEST_API_URL = "http://localhost:8080"
+go vet ./...
+go test ./... -v -count=1
+```
+
+Invitation unit tests run without PostgreSQL or the API:
+
+```powershell
+go test ./internal/invitation -v
+```
+
+Integration tests verify invitation acceptance, wrong-password
+rejection, token reuse rejection, membership isolation and no
+automatic role grants.
+
+### Stop containers
+
+```powershell
+docker compose down
+```
+
+This preserves the database volume.

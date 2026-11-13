@@ -267,6 +267,99 @@ func TestAPIIntegration(t *testing.T) {
 		call("GET", "/permission-check",
 			unprivileged.AccessToken, nil, 403, nil)
 	})
+	t.Run("existing user joins another tenant through invitation", func(t *testing.T) {
+		var invitation struct {
+			Data struct {
+				Token    string `json:"invitation_token"`
+				TenantID int64  `json:"tenant_id"`
+			} `json:"data"`
+		}
+
+		// Fresh test user Alpha mein already exist karta hai.
+		// Beta admin use Beta mein invite karega.
+		call(
+			"POST",
+			"/invitations",
+			beta.AccessToken,
+			map[string]string{"email": email},
+			201,
+			&invitation,
+		)
+
+		if invitation.Data.Token == "" {
+			t.Fatal("invitation token missing")
+		}
+
+		acceptBody := map[string]string{
+			"invitation_token": invitation.Data.Token,
+			"email":            email,
+			"password":         "WrongPassword",
+		}
+
+		// Wrong password invitation consume nahi karna chahiye.
+		call(
+			"POST", "/invitations/accept",
+			"", acceptBody, 401, nil,
+		)
+
+		acceptBody["password"] = "TestUser@123"
+
+		var joined struct {
+			Data struct {
+				TenantID int64 `json:"tenant_id"`
+				UserID   int64 `json:"user_id"`
+			} `json:"data"`
+		}
+
+		call(
+			"POST", "/invitations/accept",
+			"", acceptBody, 200, &joined,
+		)
+
+		if joined.Data.UserID != created.Data.ID {
+			t.Fatal("acceptance must reuse the existing global user")
+		}
+
+		if joined.Data.TenantID != invitation.Data.TenantID {
+			t.Fatal("membership created in the wrong tenant")
+		}
+
+		// Accepted invitation cannot be reused.
+		call(
+			"POST", "/invitations/accept",
+			"", acceptBody, 401, nil,
+		)
+
+		betaMember := login(email, "TestUser@123", "beta")
+
+		call(
+			"GET", "/me",
+			betaMember.AccessToken, nil, 200, nil,
+		)
+
+		// Invitation grants membership, not roles.
+		call(
+			"GET", "/users",
+			betaMember.AccessToken, nil, 403, nil,
+		)
+
+		// Alpha membership remains accessible.
+		call(
+			"GET", "/me",
+			unprivileged.AccessToken, nil, 200, nil,
+		)
+
+		// Clean up only the newly added Beta membership.
+		call(
+			"DELETE", path,
+			beta.AccessToken, nil, 204, nil,
+		)
+
+		call(
+			"GET", "/me",
+			betaMember.AccessToken, nil, 401, nil,
+		)
+	})
 	t.Run("soft delete removes access", func(t *testing.T) {
 		call("DELETE", path, alpha.AccessToken, nil, 204, nil)
 		deleted = true

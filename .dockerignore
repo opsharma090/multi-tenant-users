@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+
+bin/
+tmp/
+coverage*
+
+*.exe
+*.test
+*.zip
+*.patch
+
+.vscode/
+.idea/

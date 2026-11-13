@@ -6,6 +6,7 @@ import (
 	"log"
 	"multi-tenant-users/internal/audit"
 	"multi-tenant-users/internal/auth"
+	"multi-tenant-users/internal/invitation"
 	"multi-tenant-users/internal/middleware"
 	"multi-tenant-users/internal/platform"
 	"multi-tenant-users/internal/role"
@@ -53,7 +54,20 @@ func run() error {
 	mux.HandleFunc("POST /auth/login", authHandler.Login)
 	mux.HandleFunc("POST /auth/refresh", authHandler.Refresh)
 	authMiddleware := middleware.NewAuth(db, jwtSecret)
+	invitationRepo := invitation.NewRepository(db)
+	invitationService := invitation.NewService(invitationRepo)
+	invitationHandler := invitation.NewHandler(invitationService)
 
+	mux.Handle("POST /invitations", authMiddleware.Authenticate(
+		authMiddleware.Require("user:invite",
+			http.HandlerFunc(invitationHandler.Create),
+		),
+	))
+
+	mux.HandleFunc(
+		"POST /invitations/accept",
+		invitationHandler.Accept,
+	)
 	userRepo := user.NewRepository(db)
 	userService := user.NewService(userRepo)
 	userHandler := user.NewHandler(userService)
